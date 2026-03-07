@@ -32,7 +32,7 @@ class MyoManager:
         print("Starting MyoManager...")
         try:
             # Using raw EMG mode for better signal resolution
-            self.myo = Myo(mode=emg_mode.SEND_EMG.value, tty=self.tty)
+            self.myo = Myo(mode=emg_mode.RAW.value, tty=self.tty)
             self.myo.connect()
             self.is_connected = True
             print("Myo connected successfully.")
