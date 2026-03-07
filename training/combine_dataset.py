@@ -17,7 +17,7 @@ import pandas as pd
 # different output location.
 # ---------------------------------------------------------------------------
 DATASET_ROOT = Path("Datasets/dyfav")
-OUTPUT_PATH = Path("Datasets/combined_dataset.csv")
+OUTPUT_PATH = Path("data/combined_dataset.csv")
 
 # The 17 sensor columns present in every raw CSV (no header row).
 SENSOR_COLUMNS = [
