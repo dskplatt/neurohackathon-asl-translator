@@ -281,16 +281,6 @@ export default function ASLTranslator({ wsUrl }: Props) {
 
   return (
     <div className="w-screen h-screen bg-black flex items-center overflow-hidden relative" style={{ paddingLeft: "15vw" }}>
-      {/* Myo not connected overlay */}
-      {myoConnected === false && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="text-center px-8 py-6 rounded-2xl border border-stone-600/50 bg-stone-900/50">
-            <p className="text-stone-300 text-lg mb-2">Myo armband not connected</p>
-            <p className="text-stone-500 text-sm">Connect your Myo armband and refresh to start transcribing</p>
-          </div>
-        </div>
-      )}
-
       {/* Top Header Buttons */}
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
         <Link 
@@ -316,26 +306,23 @@ export default function ASLTranslator({ wsUrl }: Props) {
           width: "1px",
           height: "1px",
           overflow: "visible",
-          // We translate the entire SVG *up* by exactly how many lines have passed, 
-          // keeping the current drawing line perfectly vertically centered.
           transform: `scale(1.2) translate(-40px, ${-currentLine * Y_OFFSET}px)`,
           transition: "transform 0.5s ease-in-out",
         }}
       >
-        {/* Render fully printed text */}
         {letters.map((l) => {
           if (l.char === " ") return null;
           const pos = getCursorPos(l.slotIndex, maxCharsPerLine);
           return <LetterMorph key={l.id} targetD={l.targetD} pos={pos} slotIndex={l.slotIndex} isActiveRef={isActiveRef} />;
         })}
-        
-        {/* Render the continuous wave ahead of the text */}
         {waveSlots.map((slotIndex) => {
           const pos = getCursorPos(slotIndex, maxCharsPerLine);
           const col = slotIndex % maxCharsPerLine;
-          const fadeStart = maxCharsPerLine - 6;
-          const opacity = col > fadeStart ? Math.max(0, 1 - (col - fadeStart) / 6) : 1;
-          
+          const fadeWidth = 6;
+          const fadeStartRight = maxCharsPerLine - fadeWidth;
+          const leftFade = col < fadeWidth ? col / fadeWidth : 1;
+          const rightFade = col > fadeStartRight ? Math.max(0, 1 - (col - fadeStartRight) / fadeWidth) : 1;
+          const opacity = leftFade * rightFade;
           return (
             <WaveSegment 
               key={`wave-${slotIndex}`} 
@@ -347,6 +334,12 @@ export default function ASLTranslator({ wsUrl }: Props) {
           );
         })}
       </svg>
+      {/* Waiting for connection — below center; show when not connected (false or null). Above wave with z-index. */}
+      {(myoConnected === false || myoConnected === null) && (
+        <p className="absolute left-1/2 top-[64%] -translate-x-1/2 text-white/50 text-lg animate-pulse whitespace-nowrap z-20">
+          waiting for connection...
+        </p>
+      )}
     </div>
   );
 }
