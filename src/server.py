@@ -75,6 +75,18 @@ def _on_letter_ready(window: np.ndarray) -> None:
         if calibration_manager.state == "letter_cal":
             calibration_manager.on_window_captured(window)
         return
+
+    # #region agent log
+    import json as _json, time as _time
+    _log_path = "debug-88a71d.log"
+    window_rms = float(np.sqrt(np.mean(window ** 2)))
+    try:
+        with open(_log_path, "a") as _f:
+            _f.write(_json.dumps({"sessionId":"88a71d","location":"server.py:_on_letter_ready","message":"window_received","data":{"shape": list(window.shape), "window_rms": round(window_rms, 2)}, "hypothesisId":"B","timestamp":int(_time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
     distribution = classifier.predict(window)
     word_buffer.append(distribution)
     top_letter = max(distribution, key=distribution.get)

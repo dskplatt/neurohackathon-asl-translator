@@ -1,10 +1,10 @@
 """
 EMG-based letter segmentation for real-time ASL translation.
 
-Three-state machine: RESTING → SIGNING → RESTING (or COOLDOWN → RESTING).
-A letter is emitted only when the user completes a sign-then-rest cycle.
-After a force-close (sign held too long), the system enters COOLDOWN and
-waits for the user to rest before accepting a new sign.
+Three-state machine: RESTING → SIGNING → COOLDOWN → RESTING.
+A letter is emitted when the user completes a sign, then the system enters
+COOLDOWN and waits for a minimum pause (COOLDOWN_MS) *and* the user to rest
+before accepting a new sign.
 """
 
 import threading
@@ -19,6 +19,7 @@ REST_THRESHOLD    = 5.0    # RMS below this → resting
 MIN_WINDOW_MS     = 200    # discard windows shorter than this
 MAX_WINDOW_MS     = 2000   # force-close windows longer than this
 DEBOUNCE_MS       = 300    # RMS must stay low this long to confirm rest
+COOLDOWN_MS       = 800    # minimum pause after a letter before accepting the next
 RMS_SMOOTH_FRAMES = 15     # rolling window size for RMS smoothing
 
 # Fixed capture mode — matches calibration data collection exactly
@@ -49,6 +50,7 @@ class SegmentationStateMachine:
         self._active_buffer: list[np.ndarray] = []
         self._rms_buffer: deque[float] = deque(maxlen=RMS_SMOOTH_FRAMES)
         self._rest_frame_count = 0
+        self._cooldown_frame_count = 0
         self._lock = threading.Lock()
 
     def push_frame(self, emg_frame: np.ndarray) -> None:
@@ -83,9 +85,11 @@ class SegmentationStateMachine:
 
                         window_rms = np.sqrt(np.mean(window ** 2))
 
-                        self._state = "RESTING"
+                        self._state = "COOLDOWN"
                         self._active_buffer = []
                         self._rest_frame_count = 0
+                        self._cooldown_frame_count = 0
+                        self._rms_buffer.clear()
                         fire_signing_end = True
 
                         if window_rms < self.rest_threshold * 1.5:
@@ -172,3 +176,4 @@ class SegmentationStateMachine:
             self._active_buffer = []
             self._rms_buffer.clear()
             self._rest_frame_count = 0
+            self._cooldown_frame_count = 0

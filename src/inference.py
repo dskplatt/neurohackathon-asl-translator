@@ -21,6 +21,7 @@ from src.model import ASLClassifier
 
 WINDOW_SIZE = 40
 STRIDE = 10
+REST_THRESHOLD = 5.0
 
 
 class LetterClassifier:
@@ -136,9 +137,8 @@ class LetterClassifier:
             )
         n_timesteps = emg_window.shape[0]
 
-        with self._accel_lock:
-            accel = self._last_accel.copy()
-        accel_column = np.tile(accel, (n_timesteps, 1))
+        accel_neutral = self.scaler.mean_[8:11].copy()
+        accel_column = np.tile(accel_neutral, (n_timesteps, 1))
         window = np.hstack([emg_window, accel_column])
 
         if n_timesteps != 40:
@@ -169,6 +169,17 @@ class LetterClassifier:
         If centroids are loaded, classifies each chunk by cosine similarity
         to centroids and averages. Otherwise uses the pretrained linear head.
         """
+        # #region agent log
+        import json as _json, time as _time
+        _log_path = "debug-88a71d.log"
+        def _dbg(msg, data, hyp):
+            try:
+                with open(_log_path, "a") as _f:
+                    _f.write(_json.dumps({"sessionId":"88a71d","location":"inference.py:predict","message":msg,"data":data,"hypothesisId":hyp,"timestamp":int(_time.time()*1000)}) + "\n")
+            except Exception:
+                pass
+        # #endregion
+
         emg_window = np.asarray(emg_window, dtype=np.float64)
         if emg_window.ndim != 2 or emg_window.shape[1] != 8:
             raise ValueError(
@@ -178,9 +189,29 @@ class LetterClassifier:
 
         with self._accel_lock:
             accel = self._last_accel.copy()
-        accel_column = np.tile(accel, (n, 1))
+
+        # #region agent log
+        _dbg("accel_state", {"accel": accel.tolist(), "all_zero": bool(np.all(accel == 0))}, "A")
+        # #endregion
+
+        accel_neutral = self.scaler.mean_[8:11].copy()
+        accel_column = np.tile(accel_neutral, (n, 1))
         full = np.hstack([emg_window, accel_column])  # (n, 11)
         full_scaled = self.scaler.transform(full.astype(np.float32))
+
+        # #region agent log
+        emg_rms_per_frame = np.sqrt(np.mean(emg_window ** 2, axis=1))
+        active_mask = emg_rms_per_frame > 12.0
+        _dbg("window_and_scaler_stats", {
+            "n_frames": int(n),
+            "active_pct": round(float(np.mean(active_mask)) * 100, 1),
+            "scaled_mean": round(float(np.mean(full_scaled)), 4),
+            "scaled_std": round(float(np.std(full_scaled)), 4),
+            "scaled_min": round(float(np.min(full_scaled)), 4),
+            "scaled_max": round(float(np.max(full_scaled)), 4),
+            "accel_raw": [round(float(v), 3) for v in accel],
+        }, "B,C,G")
+        # #endregion
 
         W = WINDOW_SIZE
         S = STRIDE
@@ -199,9 +230,38 @@ class LetterClassifier:
             padded = f(x_new)
             batch = torch.tensor(padded.T, dtype=torch.float32).unsqueeze(0).to(self.device)
 
+        # #region agent log
+        _dbg("batch_info", {"n_chunks": int(batch.shape[0]), "using_centroids": self._centroids is not None, "using_personal": self._using_personal}, "B,D")
+        # #endregion
+
         with torch.no_grad():
+            features = self.model.get_features(batch)  # (num_chunks, 64)
+
+            # #region agent log
+            feat_np_log = features.cpu().numpy()
+            feat_norms = np.linalg.norm(feat_np_log, axis=1)
+            cosine_sims = []
+            if len(feat_np_log) > 1:
+                for i in range(min(5, len(feat_np_log))):
+                    for j in range(i+1, min(5, len(feat_np_log))):
+                        cos = np.dot(feat_np_log[i], feat_np_log[j]) / (np.linalg.norm(feat_np_log[i]) * np.linalg.norm(feat_np_log[j]) + 1e-8)
+                        cosine_sims.append(float(cos))
+            raw_logits = self.model.classifier_head(features)
+            logit_np = raw_logits.cpu().numpy()
+            _dbg("feature_analysis", {
+                "feat_norm_mean": round(float(np.mean(feat_norms)), 4),
+                "feat_norm_std": round(float(np.std(feat_norms)), 4),
+                "feat_mean": round(float(np.mean(feat_np_log)), 4),
+                "feat_std": round(float(np.std(feat_np_log)), 4),
+                "chunk_cosine_sims": [round(c, 4) for c in cosine_sims[:10]],
+                "logit_mean": round(float(np.mean(logit_np)), 4),
+                "logit_std": round(float(np.std(logit_np)), 4),
+                "logit_range": round(float(np.max(logit_np) - np.min(logit_np)), 4),
+                "logit_sample_chunk0": [round(float(v), 3) for v in logit_np[0]],
+            }, "F,H")
+            # #endregion
+
             if self._centroids is not None:
-                features = self.model.get_features(batch)  # (num_chunks, 64)
                 feat_np = features.cpu().numpy()
                 norms = np.linalg.norm(feat_np, axis=1, keepdims=True)
                 norms = np.maximum(norms, 1e-8)
@@ -217,7 +277,33 @@ class LetterClassifier:
                 chunk_probs = exp_sim / exp_sim.sum(axis=1, keepdims=True)
                 probs = chunk_probs.mean(axis=0)
             else:
-                probs = self.model.get_probabilities(batch).mean(dim=0).cpu().numpy()
+                all_probs = self.model.get_probabilities(batch)  # (n_chunks, 26)
+
+                # #region agent log
+                per_chunk_top = torch.argmax(all_probs, dim=1).cpu().numpy().tolist()
+                per_chunk_conf = torch.max(all_probs, dim=1).values.cpu().numpy().tolist()
+                from collections import Counter
+                chunk_votes = Counter(per_chunk_top)
+                _dbg("per_chunk_predictions", {
+                    "chunk_top_indices": per_chunk_top,
+                    "chunk_confidences": [round(c, 3) for c in per_chunk_conf],
+                    "vote_counts": {self.int_to_letter.get(k, str(k)): v for k, v in chunk_votes.most_common(5)},
+                    "total_chunks": len(per_chunk_top),
+                    "dominant_letter": self.int_to_letter.get(chunk_votes.most_common(1)[0][0], "?"),
+                    "dominant_pct": round(chunk_votes.most_common(1)[0][1] / len(per_chunk_top) * 100, 1),
+                }, "B,D")
+                # #endregion
+
+                probs = all_probs.mean(dim=0).cpu().numpy()
+
+        # #region agent log
+        top5_idx = np.argsort(probs)[::-1][:5]
+        _dbg("final_prediction", {
+            "top5": [{"letter": self.int_to_letter[int(i)], "prob": round(float(probs[i]), 4)} for i in top5_idx],
+            "entropy": round(float(-np.sum(probs * np.log(probs + 1e-10))), 4),
+            "max_prob": round(float(np.max(probs)), 4),
+        }, "D,E")
+        # #endregion
 
         return {self.int_to_letter[i]: float(probs[i]) for i in range(26)}
 
