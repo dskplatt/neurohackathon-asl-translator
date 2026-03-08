@@ -1,8 +1,10 @@
 """
 EMG-based letter segmentation for real-time ASL translation.
 
-Uses a two-state machine (RESTING / SIGNING) driven by smoothed RMS energy
-to detect letter boundaries in a continuous Myo EMG stream.
+Three-state machine: RESTING → SIGNING → RESTING (or COOLDOWN → RESTING).
+A letter is emitted only when the user completes a sign-then-rest cycle.
+After a force-close (sign held too long), the system enters COOLDOWN and
+waits for the user to rest before accepting a new sign.
 """
 
 import threading
@@ -12,12 +14,12 @@ import numpy as np
 
 # ── Tunable constants ────────────────────────────────────────────────────────
 SAMPLE_RATE       = 200    # Hz  (Myo EMG rate)
-ACTIVE_THRESHOLD  = 15.0   # RMS above this → signing
-REST_THRESHOLD    = 8.0    # RMS below this → resting
-MIN_WINDOW_MS     = 150    # discard windows shorter than this
-MAX_WINDOW_MS     = 1500   # force-close windows longer than this
-DEBOUNCE_MS       = 100    # RMS must stay low this long to confirm rest
-RMS_SMOOTH_FRAMES = 10     # rolling window size for RMS smoothing (50 ms)
+ACTIVE_THRESHOLD  = 12.0   # RMS above this → signing
+REST_THRESHOLD    = 5.0    # RMS below this → resting
+MIN_WINDOW_MS     = 200    # discard windows shorter than this
+MAX_WINDOW_MS     = 2000   # force-close windows longer than this
+DEBOUNCE_MS       = 300    # RMS must stay low this long to confirm rest
+RMS_SMOOTH_FRAMES = 15     # rolling window size for RMS smoothing
 
 
 class SegmentationStateMachine:
@@ -44,18 +46,14 @@ class SegmentationStateMachine:
         self._rest_frame_count = 0
         self._lock = threading.Lock()
 
-    # ── public API ───────────────────────────────────────────────────────
-
     def push_frame(self, emg_frame: np.ndarray) -> None:
-        """Ingest one 8-channel EMG frame.  Thread-safe."""
+        """Ingest one 8-channel EMG frame. Thread-safe."""
         emg_frame = np.asarray(emg_frame, dtype=np.float64)
-
         rms = np.sqrt(np.mean(emg_frame ** 2))
 
         fire_signing_start = False
         fire_signing_end = False
         fire_letter_ready = False
-        fire_force_close = False
         window = None
         discard_msg = None
 
@@ -84,28 +82,35 @@ class SegmentationStateMachine:
                         self._state = "RESTING"
                         self._active_buffer = []
                         self._rest_frame_count = 0
-
                         fire_signing_end = True
 
                         if MIN_WINDOW_MS <= duration_ms <= MAX_WINDOW_MS:
                             fire_letter_ready = True
                         else:
-                            discard_msg = (
-                                f"Discarded window: {duration_ms:.0f}ms "
-                                f"(out of range)"
-                            )
+                            discard_msg = f"Discarded window: {duration_ms:.0f}ms (out of range)"
                 else:
                     self._rest_frame_count = 0
 
                 max_frames = int(MAX_WINDOW_MS / 1000 * SAMPLE_RATE)
                 if self._state == "SIGNING" and len(self._active_buffer) >= max_frames:
                     window = np.array(self._active_buffer)
-                    self._state = "RESTING"
+                    self._state = "COOLDOWN"
                     self._active_buffer = []
                     self._rest_frame_count = 0
-                    fire_force_close = True
+                    self._rms_buffer.clear()
+                    fire_signing_end = True
+                    fire_letter_ready = True
 
-        # Callbacks outside the lock to avoid deadlock
+            elif self._state == "COOLDOWN":
+                if smoothed_rms < self.rest_threshold:
+                    self._rest_frame_count += 1
+                    debounce_frames = int(DEBOUNCE_MS / 1000 * SAMPLE_RATE)
+                    if self._rest_frame_count >= debounce_frames:
+                        self._state = "RESTING"
+                        self._rest_frame_count = 0
+                else:
+                    self._rest_frame_count = 0
+
         if fire_signing_start:
             self.on_signing_start()
         if fire_signing_end:
@@ -114,10 +119,6 @@ class SegmentationStateMachine:
             self.on_letter_ready(window)
         elif discard_msg:
             print(discard_msg)
-        if fire_force_close:
-            self.on_signing_end()
-            self.on_letter_ready(window)
-            print("Force-closed window at MAX_WINDOW_MS")
 
     def update_thresholds(
         self, active_threshold: float, rest_threshold: float
@@ -138,63 +139,9 @@ class SegmentationStateMachine:
         )
 
     def reset(self) -> None:
-        """Clear buffers and return to RESTING.  Thresholds are kept."""
+        """Clear buffers and return to RESTING. Thresholds are kept."""
         with self._lock:
             self._state = "RESTING"
             self._active_buffer = []
             self._rms_buffer.clear()
             self._rest_frame_count = 0
-
-
-# ── Offline mock test ────────────────────────────────────────────────────────
-
-def run_mock_test() -> None:
-    import pandas as pd
-    from pathlib import Path
-
-    csv_path = Path(__file__).resolve().parent.parent / "data" / "combined_dataset.csv"
-    print(f"Loading {csv_path} …")
-    df = pd.read_csv(csv_path)
-    df = df[df["user_id"] == 1]
-
-    emg_cols = [f"emg_{i}" for i in range(1, 9)]
-    labels_sorted = sorted(df["label"].unique())
-
-    total_windows = 0
-
-    for label in labels_sorted:
-        subset = df[df["label"] == label]
-        frames_fed = 0
-        windows: list[np.ndarray] = []
-
-        sm = SegmentationStateMachine(
-            on_letter_ready=lambda w, _w=windows: _w.append(w),
-        )
-
-        for _, row in subset.iterrows():
-            sm.push_frame(row[emg_cols].values)
-            frames_fed += 1
-
-        # Feed a burst of silence to flush any trailing SIGNING state
-        silence = np.zeros(8)
-        for _ in range(int(DEBOUNCE_MS / 1000 * SAMPLE_RATE) + 5):
-            sm.push_frame(silence)
-
-        n_windows = len(windows)
-        avg_len_ms = (
-            np.mean([len(w) / SAMPLE_RATE * 1000 for w in windows])
-            if windows
-            else 0.0
-        )
-        total_windows += n_windows
-
-        print(
-            f"  label={label!s:>2}  frames_fed={frames_fed:5d}  "
-            f"windows={n_windows:3d}  avg_len={avg_len_ms:6.1f}ms"
-        )
-
-    print(f"\nTotal windows detected: {total_windows}")
-
-
-if __name__ == "__main__":
-    run_mock_test()

@@ -9,6 +9,10 @@ pipeline and broadcasts state changes to connected frontends over WebSocket.
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
+import threading
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -16,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from src.calibration import CalibrationManager
 from src.inference import LetterClassifier
 from src.myo_reader import MyoReader
 from src.segmentation import SegmentationStateMachine
@@ -30,6 +35,9 @@ classifier: LetterClassifier = None  # type: ignore[assignment]
 resolver: WordResolver = None  # type: ignore[assignment]
 segmentation: SegmentationStateMachine = None  # type: ignore[assignment]
 myo_reader: MyoReader = None  # type: ignore[assignment]
+calibration_manager: CalibrationManager = None  # type: ignore[assignment]
+training_in_progress: bool = False
+training_complete: bool = False
 
 
 # ── Broadcasting ──────────────────────────────────────────────────────────────
@@ -56,7 +64,18 @@ def _broadcast_sync(message: dict) -> None:
 
 # ── Pipeline callbacks (called from background threads) ───────────────────────
 
+def _on_emg_frame(emg_frame: np.ndarray) -> None:
+    """Route EMG frames to signal calibration when active, else to segmentation."""
+    if calibration_manager and calibration_manager.state == "signal_cal":
+        calibration_manager.on_signal_frame(emg_frame)
+    segmentation.push_frame(emg_frame)
+
+
 def _on_letter_ready(window: np.ndarray) -> None:
+    if calibration_manager and calibration_manager.state in ("letter_cal", "training"):
+        if calibration_manager.state == "letter_cal":
+            calibration_manager.on_window_captured(window)
+        return
     distribution = classifier.predict(window)
     word_buffer.append(distribution)
     top_letter = max(distribution, key=distribution.get)
@@ -97,7 +116,7 @@ def _on_wave_left() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global loop, classifier, resolver, segmentation, myo_reader
+    global loop, classifier, resolver, segmentation, myo_reader, calibration_manager
 
     loop = asyncio.get_event_loop()
 
@@ -106,12 +125,29 @@ async def lifespan(app: FastAPI):
 
     segmentation = SegmentationStateMachine(
         on_letter_ready=_on_letter_ready,
-        on_signing_start=lambda: _broadcast_sync({"type": "signing_active", "active": True}),
-        on_signing_end=lambda: _broadcast_sync({"type": "signing_active", "active": False}),
+        on_signing_start=lambda: (
+            _broadcast_sync({"type": "signing_active", "active": True})
+            if not calibration_manager or calibration_manager.state == "idle"
+            else None
+        ),
+        on_signing_end=lambda: (
+            _broadcast_sync({"type": "signing_active", "active": False})
+            if not calibration_manager or calibration_manager.state == "idle"
+            else None
+        ),
+    )
+
+    calibration_manager = CalibrationManager(
+        model=classifier.model,
+        preprocess_fn=classifier.preprocess,
+        segmentation=segmentation,
+        broadcast_fn=_broadcast_sync,
+        device=classifier.device,
+        on_calibration_done=lambda: classifier.load_centroids(),
     )
 
     myo_reader = MyoReader(
-        on_emg_frame=segmentation.push_frame,
+        on_emg_frame=_on_emg_frame,
         on_accel_frame=classifier.update_accel,
         on_wave_right=_on_wave_right,
         on_wave_left=_on_wave_left,
@@ -200,6 +236,107 @@ async def mock_wave_right():
 async def mock_wave_left():
     _on_wave_left()
     return {"status": "ok"}
+
+
+# ── Calibration endpoints ─────────────────────────────────────────────────────
+
+@app.post("/calibrate/signal")
+async def calibrate_signal():
+    if calibration_manager.state != "idle":
+        return {"status": "error", "message": f"Already in state: {calibration_manager.state}"}
+    calibration_manager.start_signal_calibration()
+    return {"status": "started", "mode": "signal"}
+
+
+@app.post("/calibrate/letters")
+async def calibrate_letters():
+    if calibration_manager.state != "idle":
+        return {"status": "error", "message": f"Already in state: {calibration_manager.state}"}
+    calibration_manager.start_letter_calibration()
+    return {"status": "started", "mode": "letters"}
+
+
+@app.post("/calibrate/reload")
+async def calibrate_reload():
+    """Reload centroids from disk."""
+    loaded = classifier.load_centroids()
+    if loaded:
+        return {"status": "ok", "message": "Centroids reloaded"}
+    return {"status": "ok", "message": "No centroids found, using pretrained head"}
+
+
+@app.get("/calibrate/status")
+async def calibrate_status():
+    personal_exists = os.path.exists("models/classifier_personal.pt")
+    data_exists = os.path.exists("data/calibration_data.csv")
+
+    data_rows = 0
+    if data_exists:
+        import pandas as pd
+        try:
+            data_rows = len(pd.read_csv("data/calibration_data.csv"))
+        except Exception:
+            pass
+
+    return {
+        "state": calibration_manager.state,
+        "current_letter_idx": calibration_manager.current_letter_idx,
+        "centroids_loaded": classifier._centroids is not None,
+        "personal_model_exists": personal_exists,
+        "calibration_data_exists": data_exists,
+        "calibration_data_rows": data_rows,
+        "training_in_progress": training_in_progress,
+        "training_complete": training_complete,
+        "active_model": "personal" if personal_exists else "pretrained",
+    }
+
+
+@app.post("/calibrate/train")
+async def start_training():
+    global training_in_progress, training_complete
+
+    if training_in_progress:
+        return {"status": "already_training"}
+
+    if not os.path.exists("data/calibration_data.csv"):
+        return {
+            "status": "error",
+            "message": "No calibration data found. Run data collection first.",
+        }
+
+    training_in_progress = True
+    training_complete = False
+
+    def run_training():
+        global training_in_progress, training_complete
+        try:
+            _broadcast_sync({"type": "training_started"})
+            result = subprocess.run(
+                [sys.executable, "scripts/train_personal_model.py"],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                classifier.reload()
+                training_complete = True
+                _broadcast_sync({
+                    "type": "training_complete",
+                    "message": "Personal model ready",
+                })
+                print("Personal model loaded successfully.")
+            else:
+                _broadcast_sync({
+                    "type": "training_failed",
+                    "error": result.stderr[-500:],
+                })
+                print("Training failed:", result.stderr)
+        finally:
+            training_in_progress = False
+
+    threading.Thread(target=run_training, daemon=True).start()
+    return {
+        "status": "training_started",
+        "message": "Training in background. WebSocket will notify when complete.",
+    }
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
