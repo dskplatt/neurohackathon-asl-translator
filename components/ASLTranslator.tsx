@@ -231,6 +231,8 @@ export default function ASLTranslator({ wsUrl }: Props) {
                 });
                 setLetters([...currentLetters, ...newLetters]);
               }
+            } else if (data.type === "myo_status" && typeof data.myo_connected === "boolean") {
+              setMyoConnected(data.myo_connected);
             } else if (data.type === "letter_deleted") {
               const currentLetters = lettersRef.current;
               if (currentLetters.length > 0) {
@@ -248,7 +250,7 @@ export default function ASLTranslator({ wsUrl }: Props) {
             fetch(healthUrl)
               .then((r) => r.json())
               .then((h) => setMyoConnected(h.myo_connected ?? null))
-              .catch(() => setMyoConnected(null));
+              .catch(() => {});
           };
           checkHealth();
           const interval = setInterval(checkHealth, 5000);
@@ -334,12 +336,16 @@ export default function ASLTranslator({ wsUrl }: Props) {
           );
         })}
       </svg>
-      {/* Waiting for connection — below center; show when not connected (false or null). Above wave with z-index. */}
-      {(myoConnected === false || myoConnected === null) && (
-        <p className="absolute left-1/2 top-[64%] -translate-x-1/2 text-white/50 text-lg animate-pulse whitespace-nowrap z-20">
-          waiting for connection...
-        </p>
-      )}
+      <p className={`absolute left-1/2 top-[64%] -translate-x-1/2 text-lg whitespace-nowrap z-20 flex items-center gap-2 transition-opacity duration-500 ${
+        myoConnected === true ? "text-emerald-400/70" : "text-white/50 animate-pulse"
+      }`}>
+        <span className={`inline-block w-2 h-2 rounded-full ${
+          myoConnected === true ? "bg-emerald-400" : myoConnected === false ? "bg-red-400" : "bg-white/40"
+        }`} />
+        {myoConnected === null && "waiting for connection..."}
+        {myoConnected === false && "myo disconnected"}
+        {myoConnected === true && "myo connected"}
+      </p>
     </div>
   );
 }

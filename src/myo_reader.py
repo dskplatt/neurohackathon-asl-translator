@@ -34,13 +34,15 @@ class MyoReader:
         on_accel_frame,
         on_wave_right,
         on_wave_left,
+        on_connect_change=None,
     ):
         self.on_emg_frame = on_emg_frame
         self.on_accel_frame = on_accel_frame
         self.on_wave_right = on_wave_right
         self.on_wave_left = on_wave_left
+        self.on_connect_change = on_connect_change
         self._running = False
-        self._connected = False  # True only after connect() succeeds
+        self._connected = False
         self._myo = None
 
     # ── Myo callbacks ─────────────────────────────────────────────────
@@ -106,11 +108,15 @@ class MyoReader:
                 self._myo.vibrate(1)
                 self._connected = True
                 print("Myo connected — streaming in FILTERED mode")
+                if self.on_connect_change:
+                    self.on_connect_change(True)
                 while self._running:
                     self._myo.run()
             except Exception as e:
                 self._connected = False
                 print(f"Myo not available ({e}) — connect Myo armband for transcription")
+                if self.on_connect_change:
+                    self.on_connect_change(False)
 
         self._running = True
         t = threading.Thread(target=_run, daemon=True)
