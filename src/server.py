@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.calibration import CalibrationManager
 from src.inference import LetterClassifier
@@ -145,11 +146,15 @@ async def lifespan(app: FastAPI):
         on_calibration_done=lambda: classifier.load_centroids(),
     )
 
+    def _on_myo_connect_change(connected: bool):
+        _broadcast_sync({"type": "myo_status", "myo_connected": connected})
+
     myo_reader = MyoReader(
         on_emg_frame=_on_emg_frame,
         on_accel_frame=classifier.update_accel,
         on_wave_right=_on_wave_right,
         on_wave_left=_on_wave_left,
+        on_connect_change=_on_myo_connect_change,
     )
     try:
         myo_reader.start()
@@ -163,6 +168,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
