@@ -21,6 +21,11 @@ MAX_WINDOW_MS     = 2000   # force-close windows longer than this
 DEBOUNCE_MS       = 300    # RMS must stay low this long to confirm rest
 RMS_SMOOTH_FRAMES = 15     # rolling window size for RMS smoothing
 
+# Fixed capture mode — matches calibration data collection exactly
+FIXED_CAPTURE_MODE   = True    # True = 400-frame fixed windows
+                                # False = original RMS rest detection
+FIXED_CAPTURE_FRAMES = 400     # must match calibration data frame count
+
 
 class SegmentationStateMachine:
     """Segments a continuous EMG stream into per-letter windows."""
@@ -71,35 +76,57 @@ class SegmentationStateMachine:
             elif self._state == "SIGNING":
                 self._active_buffer.append(emg_frame.copy())
 
-                if smoothed_rms < self.rest_threshold:
-                    self._rest_frame_count += 1
-                    debounce_frames = int(DEBOUNCE_MS / 1000 * SAMPLE_RATE)
-
-                    if self._rest_frame_count >= debounce_frames:
+                if FIXED_CAPTURE_MODE:
+                    if len(self._active_buffer) >= FIXED_CAPTURE_FRAMES:
                         window = np.array(self._active_buffer)
                         duration_ms = len(window) / SAMPLE_RATE * 1000
+
+                        window_rms = np.sqrt(np.mean(window ** 2))
 
                         self._state = "RESTING"
                         self._active_buffer = []
                         self._rest_frame_count = 0
                         fire_signing_end = True
 
-                        if MIN_WINDOW_MS <= duration_ms <= MAX_WINDOW_MS:
-                            fire_letter_ready = True
+                        if window_rms < self.rest_threshold * 1.5:
+                            print(f"Discarded false trigger window "
+                                  f"(RMS={window_rms:.1f}, "
+                                  f"threshold={self.rest_threshold * 1.5:.1f})")
                         else:
-                            discard_msg = f"Discarded window: {duration_ms:.0f}ms (out of range)"
-                else:
-                    self._rest_frame_count = 0
+                            fire_letter_ready = True
+                            print(f"Letter window: {len(window)} frames "
+                                  f"({duration_ms:.0f}ms), RMS={window_rms:.1f}")
 
-                max_frames = int(MAX_WINDOW_MS / 1000 * SAMPLE_RATE)
-                if self._state == "SIGNING" and len(self._active_buffer) >= max_frames:
-                    window = np.array(self._active_buffer)
-                    self._state = "COOLDOWN"
-                    self._active_buffer = []
-                    self._rest_frame_count = 0
-                    self._rms_buffer.clear()
-                    fire_signing_end = True
-                    fire_letter_ready = True
+                else:
+                    if smoothed_rms < self.rest_threshold:
+                        self._rest_frame_count += 1
+                        debounce_frames = int(DEBOUNCE_MS / 1000 * SAMPLE_RATE)
+
+                        if self._rest_frame_count >= debounce_frames:
+                            window = np.array(self._active_buffer)
+                            duration_ms = len(window) / SAMPLE_RATE * 1000
+
+                            self._state = "RESTING"
+                            self._active_buffer = []
+                            self._rest_frame_count = 0
+                            fire_signing_end = True
+
+                            if MIN_WINDOW_MS <= duration_ms <= MAX_WINDOW_MS:
+                                fire_letter_ready = True
+                            else:
+                                discard_msg = f"Discarded window: {duration_ms:.0f}ms (out of range)"
+                    else:
+                        self._rest_frame_count = 0
+
+                    max_frames = int(MAX_WINDOW_MS / 1000 * SAMPLE_RATE)
+                    if self._state == "SIGNING" and len(self._active_buffer) >= max_frames:
+                        window = np.array(self._active_buffer)
+                        self._state = "COOLDOWN"
+                        self._active_buffer = []
+                        self._rest_frame_count = 0
+                        self._rms_buffer.clear()
+                        fire_signing_end = True
+                        fire_letter_ready = True
 
             elif self._state == "COOLDOWN":
                 if smoothed_rms < self.rest_threshold:
