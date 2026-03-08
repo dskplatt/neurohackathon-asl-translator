@@ -32,11 +32,11 @@ export default function CalibrateSelectionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-[family-name:var(--font-montserrat)] relative overflow-hidden">
+    <div className="min-h-screen bg-black text-stone-200 flex flex-col font-[family-name:var(--font-montserrat)] relative overflow-hidden">
       <header className="w-full p-6 flex justify-between items-center z-10 relative">
         <Link 
           href="/" 
-          className="text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          className="text-gray-400 hover:text-stone-200 transition-colors flex items-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -55,13 +55,13 @@ export default function CalibrateSelectionPage() {
         </p>
 
         {/* Selection Mode Toggle */}
-        <div className="flex bg-white/10 p-1 rounded-full mb-10 border border-white/20">
+        <div className="flex bg-stone-200/10 p-1 rounded-full mb-10 border border-stone-200/20">
           <button
             onClick={() => setSelectionMode("all")}
             className={`px-6 py-2 rounded-full font-medium transition-all duration-300 ${
               selectionMode === "all" 
-                ? "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)]" 
-                : "text-gray-400 hover:text-white"
+                ? "bg-stone-200 text-black" 
+                : "text-gray-400 hover:text-stone-200"
             }`}
           >
             All Letters
@@ -70,8 +70,8 @@ export default function CalibrateSelectionPage() {
             onClick={() => setSelectionMode("custom")}
             className={`px-6 py-2 rounded-full font-medium transition-all duration-300 ${
               selectionMode === "custom" 
-                ? "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)]" 
-                : "text-gray-400 hover:text-white"
+                ? "bg-stone-200 text-black" 
+                : "text-gray-400 hover:text-stone-200"
             }`}
           >
             Custom Selection
@@ -80,7 +80,7 @@ export default function CalibrateSelectionPage() {
 
         {/* Custom Letters Grid */}
         <div className={`w-full transition-all duration-500 overflow-hidden ${selectionMode === "custom" ? "max-h-[800px] opacity-100 mb-10" : "max-h-0 opacity-0 mb-0"}`}>
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-7 gap-3 md:gap-4 w-full p-4 border border-white/10 rounded-2xl bg-white/5 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-7 gap-3 md:gap-4 w-full p-4 border border-stone-200/10 rounded-2xl bg-stone-200/5 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
             {ALPHABET.map((letter) => {
               const isSelected = selectedLetters.has(letter);
               return (
@@ -89,8 +89,8 @@ export default function CalibrateSelectionPage() {
                   onClick={() => toggleLetter(letter)}
                   className={`aspect-square flex items-center justify-center text-xl font-semibold rounded-xl transition-all duration-200 border ${
                     isSelected
-                      ? "bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.4)] transform scale-105"
-                      : "bg-transparent text-gray-400 border-white/20 hover:border-white/50 hover:text-white hover:bg-white/5"
+                      ? "bg-stone-200 text-black border-stone-200 transform scale-105"
+                      : "bg-transparent text-gray-400 border-stone-200/20 hover:border-stone-200/50 hover:text-stone-200 hover:bg-stone-200/5"
                   }`}
                 >
                   {letter}
@@ -101,7 +101,7 @@ export default function CalibrateSelectionPage() {
           <div className="flex justify-end mt-4">
             <button 
               onClick={() => setSelectedLetters(new Set())}
-              className="text-sm text-gray-400 hover:text-white transition-colors"
+              className="text-sm text-gray-400 hover:text-stone-200 transition-colors"
             >
               Clear Selection
             </button>
@@ -111,7 +111,7 @@ export default function CalibrateSelectionPage() {
         {/* Action Button */}
         <button 
           onClick={handleBegin}
-          className="w-full sm:w-auto px-10 py-4 bg-white text-black text-lg font-bold rounded-full hover:bg-gray-200 transition-all duration-300 transform hover:scale-105 shadow-[0_0_40px_rgba(255,255,255,0.3)] mt-auto"
+          className="w-full sm:w-auto px-10 py-4 bg-stone-200 text-black text-lg font-bold rounded-full hover:bg-stone-300 transition-all duration-300 transform hover:scale-105 mt-auto"
         >
           Begin Calibrating
         </button>
