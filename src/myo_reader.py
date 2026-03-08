@@ -94,29 +94,53 @@ class MyoReader:
 
     # ── Public API ────────────────────────────────────────────────────
 
-    def start(self):
+    _RECONNECT_DELAYS = [1, 2, 4, 8, 15, 30]  # exponential backoff (seconds), caps at 30
+
+    def _create_myo(self):
         from pyomyo import Myo, emg_mode
 
-        self._myo = Myo(mode=emg_mode.FILTERED)
-        self._myo.add_emg_handler(self._handle_emg)
-        self._myo.add_imu_handler(self._handle_imu)
-        self._myo.add_pose_handler(self._handle_pose)
+        myo = Myo(mode=emg_mode.FILTERED)
+        myo.add_emg_handler(self._handle_emg)
+        myo.add_imu_handler(self._handle_imu)
+        myo.add_pose_handler(self._handle_pose)
+        return myo
+
+    def start(self):
+        self._myo = self._create_myo()
 
         def _run():
-            try:
-                self._myo.connect()
-                self._myo.vibrate(1)
-                self._connected = True
-                print("Myo connected — streaming in FILTERED mode")
-                if self.on_connect_change:
-                    self.on_connect_change(True)
-                while self._running:
-                    self._myo.run()
-            except Exception as e:
-                self._connected = False
-                print(f"Myo not available ({e}) — connect Myo armband for transcription")
-                if self.on_connect_change:
-                    self.on_connect_change(False)
+            attempt = 0
+            while self._running:
+                try:
+                    self._myo.connect()
+                    self._myo.vibrate(1)
+                    self._connected = True
+                    attempt = 0
+                    print("Myo connected — streaming in FILTERED mode")
+                    if self.on_connect_change:
+                        self.on_connect_change(True)
+                    while self._running:
+                        self._myo.run()
+                except Exception as e:
+                    was_connected = self._connected
+                    self._connected = False
+                    if self.on_connect_change:
+                        self.on_connect_change(False)
+
+                    if not self._running:
+                        break
+
+                    delay = self._RECONNECT_DELAYS[min(attempt, len(self._RECONNECT_DELAYS) - 1)]
+                    label = "lost" if was_connected else "failed"
+                    print(f"Myo connection {label} ({e}) — retrying in {delay}s")
+                    time.sleep(delay)
+                    attempt += 1
+
+                    try:
+                        self._myo.disconnect()
+                    except Exception:
+                        pass
+                    self._myo = self._create_myo()
 
         self._running = True
         t = threading.Thread(target=_run, daemon=True)
