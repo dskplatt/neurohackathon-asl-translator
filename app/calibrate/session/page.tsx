@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 interface Props {
   searchParams: { letters?: string };
@@ -40,14 +41,17 @@ export default function CalibrateSessionPage({ searchParams }: Props) {
         </p>
 
         {/* Placeholder for the calibration UI */}
-        <div className="w-full max-w-3xl aspect-video bg-stone-200/5 border border-stone-200/10 rounded-2xl flex flex-col items-center justify-center mb-10 shadow-[0_0_30px_rgba(0,0,0,0.5)] relative overflow-hidden">
-          <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-          <p className="text-gray-500 text-lg">Calibration Visualizer Placeholder</p>
+        <div className="w-full max-w-3xl aspect-video bg-stone-200/5 border border-stone-200/10 rounded-2xl flex flex-col items-center justify-center mb-10 shadow-[0_0_30px_rgba(0,0,0,0.5)] relative overflow-hidden p-4">
+          <Image 
+            src="/asl_alphabet.png" 
+            alt="ASL Alphabet Reference" 
+            fill 
+            className="object-contain z-10 p-4" 
+            priority
+          />
           
           {/* Subtle scanning effect overlay for the placeholder */}
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-stone-200/5 to-transparent w-full h-full animate-[scan_3s_ease-in-out_infinite]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-stone-200/10 to-transparent w-full h-full animate-[scan_3s_ease-in-out_infinite] z-20 pointer-events-none mix-blend-overlay" />
         </div>
 
         {/* Action Buttons */}
