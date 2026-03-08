@@ -102,6 +102,7 @@ def _on_letter_ready(window: np.ndarray) -> None:
 def _on_wave_right() -> None:
     if not word_buffer:
         return
+    segmentation.pause()
     candidates = resolver.resolve(word_buffer, top_n=5)
     primary_word, primary_score = candidates[0]
     alternates = [w for w, _ in candidates[1:3]]
@@ -113,15 +114,6 @@ def _on_wave_right() -> None:
     })
     word_buffer.clear()
 
-
-def _on_wave_left() -> None:
-    if not word_buffer:
-        return
-    word_buffer.pop()
-    _broadcast_sync({
-        "type": "letter_deleted",
-        "remaining_count": len(word_buffer),
-    })
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -165,7 +157,7 @@ async def lifespan(app: FastAPI):
         on_emg_frame=_on_emg_frame,
         on_accel_frame=classifier.update_accel,
         on_wave_right=_on_wave_right,
-        on_wave_left=_on_wave_left,
+        on_wave_left=None,
         on_connect_change=_on_myo_connect_change,
     )
     try:

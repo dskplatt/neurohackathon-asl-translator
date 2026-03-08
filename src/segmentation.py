@@ -53,6 +53,20 @@ class SegmentationStateMachine:
         self._cooldown_frame_count = 0
         self._lock = threading.Lock()
 
+    def pause(self) -> None:
+        """
+        Force the state machine into COOLDOWN so it requires full rest
+        (RMS below rest_threshold for DEBOUNCE_MS) before accepting new signs.
+        Called after word resolution to prevent the arm return motion
+        from being captured as a new letter.
+        """
+        with self._lock:
+            self._state = "COOLDOWN"
+            self._active_buffer = []
+            self._rest_frame_count = 0
+            self._cooldown_frame_count = 0
+            self._rms_buffer.clear()
+
     def push_frame(self, emg_frame: np.ndarray) -> None:
         """Ingest one 8-channel EMG frame. Thread-safe."""
         emg_frame = np.asarray(emg_frame, dtype=np.float64)
