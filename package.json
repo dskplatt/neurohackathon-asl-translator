@@ -3,12 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently \"python -m uvicorn src.server:app --reload --port 8000\" \"next dev\"",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "mock": "node mock-server.js",
-    "dev:full": "concurrently \"npm run mock\" \"next dev\""
+    "lint": "next lint"
   },
   "dependencies": {
     "framer-motion": "^12.35.1",

@@ -40,6 +40,7 @@ class MyoReader:
         self.on_wave_right = on_wave_right
         self.on_wave_left = on_wave_left
         self._running = False
+        self._connected = False  # True only after connect() succeeds
         self._myo = None
 
     # ── Myo callbacks ─────────────────────────────────────────────────
@@ -100,11 +101,16 @@ class MyoReader:
         self._myo.add_pose_handler(self._handle_pose)
 
         def _run():
-            self._myo.connect()
-            self._myo.vibrate(1)
-            print("Myo connected — streaming in FILTERED mode")
-            while self._running:
-                self._myo.run()
+            try:
+                self._myo.connect()
+                self._myo.vibrate(1)
+                self._connected = True
+                print("Myo connected — streaming in FILTERED mode")
+                while self._running:
+                    self._myo.run()
+            except Exception as e:
+                self._connected = False
+                print(f"Myo not available ({e}) — connect Myo armband for transcription")
 
         self._running = True
         t = threading.Thread(target=_run, daemon=True)
@@ -112,6 +118,7 @@ class MyoReader:
 
     def stop(self):
         self._running = False
+        self._connected = False
         if self._myo is not None:
             try:
                 self._myo.disconnect()

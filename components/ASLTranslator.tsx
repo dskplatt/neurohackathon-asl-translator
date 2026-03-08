@@ -58,8 +58,8 @@ function getCursorPos(index: number, maxCharsPerLine: number) {
 
 function makeWaveSegment(slotIndex: number, time: number, active: boolean): string {
   const t = time * 0.002;
-  // Amplitude increases drastically when "signing" to match EMG bursts
-  const baseAmp = active ? 10 : 1.5;
+  // Amplitude increases when "signing" to match EMG bursts (larger waves)
+  const baseAmp = active ? 36 : 8;
   
   const points = WAVE_XS.map((x) => {
     const screenX = x + slotIndex * X_OFFSET;
@@ -172,10 +172,15 @@ interface Props {
 export default function ASLTranslator({ wsUrl }: Props) {
   const isActiveRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const lettersRef = useRef<LetterData[]>([]);
 
   const [letters, setLetters] = useState<LetterData[]>([]);
-  const [pendingChars, setPendingChars] = useState<string[]>([]);
-  const [isMorphing, setIsMorphing] = useState(false);
+  const [myoConnected, setMyoConnected] = useState<boolean | null>(null);
+
+  // Keep ref in sync with state (avoids React Strict Mode double-invocation of setState updater)
+  useEffect(() => {
+    lettersRef.current = letters;
+  }, [letters]);
   
   // Default to 20 until client renders
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(20);
@@ -207,12 +212,29 @@ export default function ASLTranslator({ wsUrl }: Props) {
         ws.onmessage = (evt) => {
           try {
             const data = JSON.parse(evt.data as string);
-            if (data.type === "signing_active") {
+            if (data.type === "reset") {
+              setLetters([]);
+              if (typeof data.myo_connected === "boolean") {
+                setMyoConnected(data.myo_connected);
+              }
+            } else if (data.type === "signing_active") {
               isActiveRef.current = data.active;
             } else if (data.type === "word_resolved" && data.primary) {
               const wordChars = data.primary.toUpperCase().split("").filter((c: string) => GLYPHS[c]);
               if (wordChars.length > 0) {
-                setPendingChars((prev) => [...prev, ...wordChars, " "]);
+                // Use ref + direct setState to avoid React Strict Mode double-invocation
+                const currentLetters = lettersRef.current;
+                const newLetters = [...wordChars, " "].map((char, index) => {
+                  const slotIndex = currentLetters.length + index;
+                  const targetD = char === " " ? "" : GLYPHS[char];
+                  return { id: Math.random().toString(36).slice(2), char, slotIndex, targetD };
+                });
+                setLetters([...currentLetters, ...newLetters]);
+              }
+            } else if (data.type === "letter_deleted") {
+              const currentLetters = lettersRef.current;
+              if (currentLetters.length > 0) {
+                setLetters(currentLetters.slice(0, -1));
               }
             }
           } catch {
@@ -220,6 +242,19 @@ export default function ASLTranslator({ wsUrl }: Props) {
           }
         };
         
+        ws.onopen = () => {
+          const healthUrl = wsUrl.replace("/ws", "/health").replace("ws:", "http:");
+          const checkHealth = () => {
+            fetch(healthUrl)
+              .then((r) => r.json())
+              .then((h) => setMyoConnected(h.myo_connected ?? null))
+              .catch(() => setMyoConnected(null));
+          };
+          checkHealth();
+          const interval = setInterval(checkHealth, 5000);
+          ws.addEventListener("close", () => clearInterval(interval), { once: true });
+        };
+
         ws.onclose = () => {
           reconnectTimer = setTimeout(connect, 2000);
         };
@@ -239,44 +274,23 @@ export default function ASLTranslator({ wsUrl }: Props) {
     };
   }, [wsUrl]);
 
-  // Sequentially process morph queue
-  useEffect(() => {
-    if (pendingChars.length === 0) return;
-    if (isMorphing) return;
-
-    setIsMorphing(true);
-    const char = pendingChars[0];
-    const slotIndex = letters.length;
-
-    if (char === " ") {
-      setLetters((prev) => [...prev, { id: Math.random().toString(36).slice(2), char, slotIndex, targetD: "" }]);
-      setPendingChars((prev) => prev.slice(1));
-      setTimeout(() => setIsMorphing(false), 200); // Quick pause for spaces
-      return;
-    }
-
-    const targetD = GLYPHS[char];
-    if (!targetD) {
-      setPendingChars((prev) => prev.slice(1));
-      setIsMorphing(false);
-      return;
-    }
-
-    setLetters((prev) => [...prev, { id: Math.random().toString(36).slice(2), char, slotIndex, targetD }]);
-    setPendingChars((prev) => prev.slice(1));
-    
-    // Wait for the animation to complete before starting the next one
-    setTimeout(() => {
-      setIsMorphing(false);
-    }, 450); // 400ms duration + 50ms pause between letters
-  }, [pendingChars, isMorphing, letters.length]);
-
+  // The letters state directly handles rendering and morphing animation.
   const currentLine = Math.floor(letters.length / maxCharsPerLine);
   const remainingInLine = (currentLine + 1) * maxCharsPerLine - letters.length;
   const waveSlots = Array.from({ length: remainingInLine }, (_, i) => letters.length + i);
 
   return (
     <div className="w-screen h-screen bg-black flex items-center overflow-hidden relative" style={{ paddingLeft: "15vw" }}>
+      {/* Myo not connected overlay */}
+      {myoConnected === false && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="text-center px-8 py-6 rounded-2xl border border-stone-600/50 bg-stone-900/50">
+            <p className="text-stone-300 text-lg mb-2">Myo armband not connected</p>
+            <p className="text-stone-500 text-sm">Connect your Myo armband and refresh to start transcribing</p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header Buttons */}
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
         <Link 
