@@ -37,12 +37,12 @@ function SvgTitle({ text }: { text: string }) {
   const letters = text.toUpperCase().split('');
   
   // Calculate total width needed based on character count and offset
-  const totalWidth = letters.length > 0 ? (letters.length - 1) * X_OFFSET + 30 : 0;
+  const totalWidth = letters.length > 0 ? (letters.length - 1) * X_OFFSET + 20 : 0;
   
   return (
     <svg 
       viewBox={`0 0 ${totalWidth} 40`} 
-      className="w-full max-w-[85vw] md:max-w-[500px] mx-auto h-16 md:h-24 mb-8 drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+      className="w-full max-w-[95vw] md:max-w-[700px] mx-auto h-24 md:h-36 mb-8"
     >
       {letters.map((char, i) => {
         if (char === ' ') return null;
@@ -53,7 +53,7 @@ function SvgTitle({ text }: { text: string }) {
           <path
             key={i}
             d={pathData}
-            stroke="white"
+            stroke="#e7e5e4"
             strokeWidth="2.5"
             fill="none"
             strokeLinecap="round"
@@ -70,7 +70,7 @@ function SvgTitle({ text }: { text: string }) {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-[family-name:var(--font-montserrat)] relative overflow-hidden">
+    <div className="min-h-screen bg-black text-stone-200 flex flex-col font-[family-name:var(--font-montserrat)] relative overflow-hidden">
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center relative z-10 px-6 text-center">
         
@@ -85,14 +85,14 @@ export default function LandingPage() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md">
           <Link
             href="/translator"
-            className="w-full sm:w-auto px-6 py-3 bg-white text-black text-base font-semibold rounded-full hover:bg-gray-200 transition-all duration-300 transform hover:scale-105 shadow-[0_0_40px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 group"
+            className="w-full sm:w-auto px-6 py-3 bg-stone-200 text-black text-base font-semibold rounded-full hover:bg-stone-300 transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group"
           >
             Transcribe
           </Link>
           
           <Link
             href="/calibrate"
-            className="w-full sm:w-auto px-6 py-3 bg-transparent text-white border border-gray-700 text-base font-semibold rounded-full hover:bg-white/10 hover:border-gray-500 transition-all duration-300 flex items-center justify-center"
+            className="w-full sm:w-auto px-6 py-3 bg-transparent text-stone-200 border border-gray-700 text-base font-semibold rounded-full hover:bg-stone-200/10 hover:border-gray-500 transition-all duration-300 flex items-center justify-center"
           >
             Calibrate
           </Link>

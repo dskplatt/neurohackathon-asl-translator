@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 const WAVE_XS = Array.from({ length: 18 }, (_, i) => 40 + i * (30 / 17));
@@ -101,7 +102,7 @@ function WaveSegment({
   return (
     <path 
       ref={pathRef}
-      stroke="white"
+      stroke="#e7e5e4"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -152,7 +153,7 @@ function LetterMorph({
   return (
     <path 
       ref={pathRef}
-      stroke="white"
+      stroke="#e7e5e4"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -275,7 +276,20 @@ export default function ASLTranslator({ wsUrl }: Props) {
   const waveSlots = Array.from({ length: remainingInLine }, (_, i) => letters.length + i);
 
   return (
-    <div className="w-screen h-screen bg-black flex items-center overflow-hidden" style={{ paddingLeft: "15vw" }}>
+    <div className="w-screen h-screen bg-black flex items-center overflow-hidden relative" style={{ paddingLeft: "15vw" }}>
+      {/* Back Button */}
+      <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
+        <Link 
+          href="/" 
+          className="text-gray-400 hover:text-stone-200 transition-colors flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back
+        </Link>
+      </div>
+
       <svg
         style={{
           width: "1px",
