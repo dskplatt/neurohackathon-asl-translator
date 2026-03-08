@@ -18,7 +18,6 @@ from contextlib import asynccontextmanager
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
 
 from src.calibration import CalibrationManager
 from src.inference import LetterClassifier
@@ -155,7 +154,7 @@ async def lifespan(app: FastAPI):
     try:
         myo_reader.start()
     except Exception as e:
-        print(f"Myo not available ({e}) — mock endpoints still work")
+        print(f"Myo not available ({e}) — connect Myo armband for transcription")
 
     print("Server ready")
     yield
@@ -173,7 +172,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
     try:
-        await websocket.send_text(json.dumps({"type": "reset"}))
+        await websocket.send_text(json.dumps({
+            "type": "reset",
+            "myo_connected": myo_reader._connected if myo_reader else False,
+        }))
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -190,7 +192,7 @@ async def health():
         "status": "ok",
         "word_buffer_length": len(word_buffer),
         "connected_clients": len(connected_clients),
-        "myo_connected": myo_reader._running if myo_reader else False,
+        "myo_connected": myo_reader._connected if myo_reader else False,
     }
 
 
@@ -199,43 +201,6 @@ async def reset():
     word_buffer.clear()
     await broadcast({"type": "reset"})
     return {"status": "reset"}
-
-
-class MockLetterBody(BaseModel):
-    letter: str
-
-
-@app.post("/mock/letter")
-async def mock_letter(body: MockLetterBody):
-    letter = body.letter.lower()
-    if len(letter) != 1 or letter not in "abcdefghijklmnopqrstuvwxyz":
-        return {"status": "error", "message": "letter must be a single a-z character"}
-
-    spread = 0.1 / 25
-    distribution = {
-        c: (0.9 if c == letter else spread)
-        for c in "abcdefghijklmnopqrstuvwxyz"
-    }
-    word_buffer.append(distribution)
-    await broadcast({
-        "type": "letter_captured",
-        "letter_index": len(word_buffer) - 1,
-        "top_letter": letter,
-        "confidence": 0.9,
-    })
-    return {"status": "ok", "letter": letter}
-
-
-@app.post("/mock/wave_right")
-async def mock_wave_right():
-    _on_wave_right()
-    return {"status": "ok"}
-
-
-@app.post("/mock/wave_left")
-async def mock_wave_left():
-    _on_wave_left()
-    return {"status": "ok"}
 
 
 # ── Calibration endpoints ─────────────────────────────────────────────────────
