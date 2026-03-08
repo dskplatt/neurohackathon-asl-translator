@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import SigningStatus, { type SigningState } from "@/components/SigningStatus";
 
 const WAVE_XS = Array.from({ length: 18 }, (_, i) => 40 + i * (30 / 17));
 
@@ -176,6 +177,8 @@ export default function ASLTranslator({ wsUrl }: Props) {
 
   const [letters, setLetters] = useState<LetterData[]>([]);
   const [myoConnected, setMyoConnected] = useState<boolean | null>(null);
+  const [signingStatus, setSigningStatus] = useState<SigningState>("waiting");
+  const [lastLetter, setLastLetter] = useState<string>("");
 
   // Keep ref in sync with state (avoids React Strict Mode double-invocation of setState updater)
   useEffect(() => {
@@ -214,12 +217,22 @@ export default function ASLTranslator({ wsUrl }: Props) {
             const data = JSON.parse(evt.data as string);
             if (data.type === "reset") {
               setLetters([]);
+              setSigningStatus("waiting");
+              setLastLetter("");
               if (typeof data.myo_connected === "boolean") {
                 setMyoConnected(data.myo_connected);
               }
             } else if (data.type === "signing_active") {
               isActiveRef.current = data.active;
+              setSigningStatus(data.active ? "reading" : "waiting");
+            } else if (data.type === "letter_captured") {
+              const captured = (data.top_letter ?? "").toUpperCase();
+              setLastLetter(captured);
+              setSigningStatus("captured");
+              setTimeout(() => setSigningStatus("waiting"), 800);
             } else if (data.type === "word_resolved" && data.primary) {
+              setSigningStatus("resolved");
+              setTimeout(() => setSigningStatus("waiting"), 1500);
               const wordChars = data.primary.toUpperCase().split("").filter((c: string) => GLYPHS[c]);
               if (wordChars.length > 0) {
                 // Use ref + direct setState to avoid React Strict Mode double-invocation
@@ -283,6 +296,7 @@ export default function ASLTranslator({ wsUrl }: Props) {
 
   return (
     <div className="w-screen h-screen bg-black flex items-center overflow-hidden relative" style={{ paddingLeft: "15vw" }}>
+      <SigningStatus state={signingStatus} letter={lastLetter} />
       {/* Top Header Buttons */}
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
         <Link 
