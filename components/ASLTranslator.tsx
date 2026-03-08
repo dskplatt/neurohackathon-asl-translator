@@ -277,7 +277,7 @@ export default function ASLTranslator({ wsUrl }: Props) {
 
   return (
     <div className="w-screen h-screen bg-black flex items-center overflow-hidden relative" style={{ paddingLeft: "15vw" }}>
-      {/* Back Button */}
+      {/* Top Header Buttons */}
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
         <Link 
           href="/" 
@@ -286,7 +286,14 @@ export default function ASLTranslator({ wsUrl }: Props) {
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
-          Back
+          Back to Home
+        </Link>
+
+        <Link 
+          href="/calibrate" 
+          className="px-5 py-2 text-stone-200 border border-stone-200/30 rounded-full hover:bg-stone-200/10 hover:border-stone-200/50 transition-all duration-300"
+        >
+          Calibrate
         </Link>
       </div>
 

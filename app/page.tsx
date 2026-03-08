@@ -85,16 +85,9 @@ export default function LandingPage() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md">
           <Link
             href="/translator"
-            className="w-full sm:w-auto px-6 py-3 bg-stone-200 text-black text-base font-semibold rounded-full hover:bg-stone-300 transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group"
+            className="w-full sm:w-auto px-8 py-3 bg-stone-200 text-black text-lg font-semibold rounded-full hover:bg-stone-300 transition-all duration-300 transform hover:scale-105 flex items-center justify-center gap-2 group shadow-[0_0_20px_rgba(231,229,228,0.2)]"
           >
             Transcribe
-          </Link>
-          
-          <Link
-            href="/calibrate"
-            className="w-full sm:w-auto px-6 py-3 bg-transparent text-stone-200 border border-gray-700 text-base font-semibold rounded-full hover:bg-stone-200/10 hover:border-gray-500 transition-all duration-300 flex items-center justify-center"
-          >
-            Calibrate
           </Link>
         </div>
       </main>

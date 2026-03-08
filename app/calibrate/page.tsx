@@ -35,13 +35,13 @@ export default function CalibrateSelectionPage() {
     <div className="min-h-screen bg-black text-stone-200 flex flex-col font-[family-name:var(--font-montserrat)] relative overflow-hidden">
       <header className="w-full p-6 flex justify-between items-center z-10 relative">
         <Link 
-          href="/" 
+          href="/translator" 
           className="text-gray-400 hover:text-stone-200 transition-colors flex items-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
-          Back
+          Back to Transcription
         </Link>
       </header>
 
