@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+torch
+numpy
+pandas
+scipy
+scikit-learn
+joblib
+nltk
+wordfreq
+pyomyo
+websockets

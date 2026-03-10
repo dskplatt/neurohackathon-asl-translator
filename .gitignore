@@ -1,36 +1,49 @@
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
 
-# testing
-/coverage
+# Models — large binary files, user-specific
+models/classifier_personal.pt
+models/scaler_personal.joblib
+models/centroids.npz
 
-# next.js
-/.next/
-/out/
+# Calibration data — user-specific, potentially large
+data/calibration_data.csv
+data/combined_dataset.csv
+data/windows.npz
 
-# production
-/build
-
-# misc
+# OS
 .DS_Store
-mock-server.js
-*.pem
+Thumbs.db
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# IDE
+.vscode/
+.idea/
+*.swp
 
-# local env files
-.env*.local
+# Node
+node_modules/
+.next/
+
+# Environment
 .env
+.env.local
+.env.*.local
 
-# vercel
-.vercel
+# Logs
+*.log
+npm-debug.log*
 
-# typescript
-*.tsbuildinfo
+# Next.js
 next-env.d.ts
+*.tsbuildinfo

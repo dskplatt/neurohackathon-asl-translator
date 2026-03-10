@@ -1,3 +1,12 @@
+"""
+Probabilistic word resolver for ASL letter sequences.
+
+Scores candidate English words by combining per-letter classification
+probabilities with word frequency data (NLTK + wordfreq). Given a sequence
+of letter probability distributions, returns the most likely English words
+of matching length.
+"""
+
 import math
 
 
