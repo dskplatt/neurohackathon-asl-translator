@@ -1,132 +1,118 @@
-# cosign
+# ASL Fingerspelling Translator
 
-Real-time ASL fingerspelling transcription using a Myo armband and a personal neural network trained on your own EMG data.
+Real-time ASL fingerspelling translation using the Myo armband — no camera, no internet connection required.
 
-The system reads electromyographic (EMG) signals from a Thalmic Myo armband, classifies individual ASL letters, and resolves them into English words — all streamed live to a browser UI over WebSocket.
+## Overview
+
+This project translates American Sign Language (ASL) fingerspelling into English text in real time. Instead of a camera, it reads electromyographic (EMG) signals from a Thalmic Labs Myo armband worn on the forearm. The entire pipeline runs locally over Bluetooth — no cloud services, no internet connection, and no line-of-sight requirement.
+
+Unlike camera-based ASL translators, this approach works regardless of lighting, occlusion, or camera angle. The trade-off is that each user must calibrate a personal model first (~15–30 minutes), because EMG signals vary significantly between individuals based on arm physiology, band placement, and signing style. Calibration involves signing each letter several times while the system records your muscle activity, then training a lightweight neural network on that data.
+
+Once calibrated, the system auto-detects when you're signing, classifies each letter, and resolves sequences of letters into English words using probabilistic word matching.
 
 ## How It Works
 
 ```
-Myo Armband (BLE)
-    ↓  EMG 200 Hz · 8 channels
-    ↓  Accelerometer 50 Hz · 3 axes
-Segmentation State Machine
-    ↓  detects signing vs. resting
-Letter Classifier (CNN + BiLSTM)
-    ↓  classifies 40-frame EMG windows → A–Z
-Word Resolver
-    ↓  maps letter probability sequences to English words
-Browser UI (WebSocket)
+Myo armband → EMG capture → RMS segmentation → CNN+BiLSTM classifier
+→ voting across overlapping windows → word resolver → web interface
 ```
 
-1. **Segmentation** monitors the EMG signal's RMS energy. When it crosses a threshold the system enters SIGNING mode and begins capturing 40-frame (200 ms) windows.
-2. **Classification** runs each window through a CNN + bidirectional LSTM trained on your personal EMG data. The model outputs a probability distribution over the 26 letters.
-3. **Word resolution** takes the accumulated letter distributions and scores candidate English words using a combination of letter probabilities and word frequency (NLTK + wordfreq).
-4. A **wave-out gesture** on the Myo triggers word resolution — the top candidate is sent to the frontend and the buffer resets.
+1. **EMG capture** — The Myo armband streams 8-channel EMG at 200 Hz and 3-axis accelerometer data at 50 Hz over Bluetooth.
+2. **Segmentation** — A state machine monitors RMS energy to detect when the user is actively signing vs resting.
+3. **Classification** — Each signing window is split into overlapping 40-frame sub-windows, classified by a CNN + bidirectional LSTM, and votes are averaged across sub-windows.
+4. **Word resolution** — Accumulated letter probability distributions are scored against an English dictionary weighted by word frequency (NLTK + wordfreq).
+5. **Wave-out gesture** — A wrist flick triggers word resolution; the top candidate is sent to the browser and the buffer resets.
 
-## Prerequisites
+## Hardware Requirements
 
-| Requirement | Notes |
-|---|---|
-| **Thalmic Myo armband** | Must be paired via Myo Connect |
-| **Python 3.11+** | Tested on 3.11 and 3.14 |
-| **Node.js 18+** | For the Next.js frontend |
+- Myo armband (original Thalmic Labs version)
+- Bluetooth adapter or built-in Bluetooth
+- Any standard laptop or desktop
 
-### Python Dependencies
+## Software Requirements
 
-```
-numpy
-pandas
-scipy
-scikit-learn
-joblib
-torch
-fastapi
-uvicorn
-pyomyo
-nltk
-wordfreq
-```
+- Python 3.10+
+- Node.js 18+
+- pyomyo
 
-Install with:
+## Installation
+
+### Backend
 
 ```bash
-pip install numpy pandas scipy scikit-learn joblib torch fastapi uvicorn pyomyo nltk wordfreq
+git clone <repo>
+cd neurohackathon-asl-translator
+pip install -r requirements.txt
 ```
 
-### Node Dependencies
+### Frontend
 
 ```bash
 npm install
 ```
 
-## Quick Start
+## Calibration
 
-Make sure your Myo armband is paired and Myo Connect is running, then:
-
-```bash
-npm run dev
-```
-
-This starts both the Python backend (FastAPI on port 8000) and the Next.js frontend concurrently. Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Personal Calibration
-
-The classifier must be calibrated to **your** muscle signals before it can accurately classify letters. There are two calibration steps:
-
-### 1. Collect Training Data
-
-The calibration UI at [/calibrate](http://localhost:3000/calibrate) walks you through signing each of the 26 letters multiple times while wearing the Myo. The segmentation engine auto-detects when you're signing and captures EMG windows for each letter.
-
-Data is saved to `data/calibration_data.csv`.
-
-You can also collect data from the command line:
+Calibration must be completed before the translator can be used. The system trains a personal model specific to your arm and signing style.
 
 ```bash
-# Full collection — all 26 letters
-python scripts/collect_calibration_data.py --samples-per-letter 15
+# Step 1 — Collect calibration data (~15 minutes)
+# Sign each letter 5+ times when prompted
+python scripts/collect_calibration_data.py
 
-# Add extra samples for specific letters
-python scripts/collect_partial_data.py --letters a s e --samples 10
-```
-
-To verify the collected data:
-
-```bash
-python scripts/validate_calibration_data.py
-```
-
-### 2. Train Your Personal Model
-
-Training can be kicked off from the calibration UI or via the API:
-
-```bash
-curl -X POST http://localhost:8000/calibrate/train
-```
-
-Or directly:
-
-```bash
+# Step 2 — Train your personal model (~15 minutes on CPU)
 python scripts/train_personal_model.py
 ```
 
-This fine-tunes the neural network on your data, fits a personal feature scaler, and saves:
+### Adding more data to improve accuracy
 
-- `models/classifier_personal.pt` — your fine-tuned model weights
-- `models/scaler_personal.joblib` — feature scaler fit to your EMG range
+```bash
+# Collect extra samples for specific letters
+python scripts/collect_partial_data.py --letters a s e --samples 10
 
-The server automatically picks up the personal model on the next request.
+# Or add samples to all letters
+python scripts/collect_partial_data.py \
+  --letters a b c d e f g h i j k l m n o p q r s t u v w x y z \
+  --samples 10
 
-### Quick Calibration (Centroids)
+# Retrain after collecting more data
+python scripts/train_personal_model.py
+```
 
-For a faster alternative to full retraining, the `/calibrate` page also supports **centroid calibration**: you sign each letter a few times and the system computes per-letter feature centroids. At inference time, letters are classified by cosine similarity to these centroids instead of the linear head. Centroids are saved to `models/centroids.npz`.
+## Running
+
+```bash
+# Start both backend and frontend concurrently
+npm run dev
+```
+
+Or start them separately:
+
+```bash
+# Terminal 1 — start backend
+uvicorn src.server:app --port 8000
+
+# Terminal 2 — start frontend
+npx next dev
+```
+
+Open http://localhost:3000/translator
+
+## Usage
+
+1. Put on the Myo armband on your dominant forearm
+2. Open the translator page
+3. Sign a letter and hold the position for ~2 seconds
+4. The system auto-detects and captures each letter
+5. Wave right to resolve the current letters into a word
+6. Repeat for the next word
 
 ## Project Structure
 
 ```
-├── app/                        Next.js pages
+├── app/                        Next.js pages (frontend)
 │   ├── page.tsx                Landing page
-│   ├── translator/page.tsx     Translator page
+│   ├── translator/page.tsx     Translator UI
 │   └── calibrate/              Calibration UI
 ├── components/
 │   ├── ASLTranslator.tsx       Main transcription component
@@ -135,63 +121,35 @@ For a faster alternative to full retraining, the `/calibrate` page also supports
 │   ├── server.py               FastAPI + WebSocket server
 │   ├── myo_reader.py           Myo BLE acquisition layer
 │   ├── segmentation.py         EMG-based letter segmentation
-│   ├── inference.py            Letter classifier (CNN + BiLSTM)
-│   ├── model.py                Neural network architecture
+│   ├── inference.py            Letter classifier wrapper
+│   ├── model.py                CNN + BiLSTM architecture
 │   ├── calibration.py          Signal + centroid calibration
 │   └── word_resolver.py        Letter sequences → English words
 ├── scripts/
-│   ├── collect_calibration_data.py
-│   ├── collect_partial_data.py
-│   ├── train_personal_model.py
-│   └── validate_calibration_data.py
-├── models/                     Trained weights and scalers
-└── data/                       Personal calibration data
+│   ├── collect_calibration_data.py     Full calibration collection
+│   ├── collect_partial_data.py         Add samples for specific letters
+│   ├── train_personal_model.py         Fine-tune personal model
+│   └── validate_calibration_data.py    Validate data before training
+├── training/                   Original dataset training pipeline
+├── models/                     Trained weights and scalers (gitignored)
+└── data/                       Calibration data (gitignored)
 ```
 
-## API Reference
+## Tech Stack
 
-### WebSocket
+- **Hardware:** Myo armband (8-channel EMG, 200 Hz, Bluetooth)
+- **Backend:** Python, FastAPI, PyTorch, scikit-learn
+- **Frontend:** Next.js, TypeScript, Tailwind CSS
+- **Model:** CNN + BiLSTM (~85K parameters)
+- **Word resolution:** Probabilistic resolver using wordfreq + NLTK
 
-**`ws://localhost:8000/ws`**
+## Limitations
 
-Streams JSON messages to connected clients:
+- Requires Myo armband (discontinued hardware — available secondhand)
+- Calibration required per user (~15–30 minutes first time)
+- Some similar hand-shape letters (A/S/E, M/N) may be occasionally confused
+- Best accuracy achieved with consistent band placement
 
-| Message Type | Fields | Description |
-|---|---|---|
-| `reset` | `myo_connected` | Sent on connect; clears frontend state |
-| `myo_status` | `myo_connected` | Myo connection changed |
-| `signing_active` | `active` | User started/stopped signing |
-| `letter_captured` | `top_letter`, `confidence`, `letter_index` | A letter window was classified |
-| `word_resolved` | `primary`, `score`, `alternates` | Word resolved from letter buffer |
+## License
 
-### HTTP
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | Server status, Myo connection, buffer length |
-| POST | `/reset` | Clear the word buffer |
-| POST | `/calibrate/signal` | Start signal calibration (threshold tuning) |
-| POST | `/calibrate/letters` | Start centroid calibration |
-| POST | `/calibrate/train` | Train personal model in background |
-| POST | `/calibrate/reload` | Reload centroids from disk |
-| GET | `/calibrate/status` | Current calibration state |
-
-## Usage Tips
-
-- **Keep the Myo snug** on your forearm — loose fit dramatically increases noise.
-- **Calibrate in the same position** you'll use for transcription. Arm angle matters.
-- **Wave out** (flick your wrist outward) to resolve the current word.
-- If accuracy drops, collect more samples for the problem letters with `collect_partial_data.py` and retrain.
-- The Myo will auto-reconnect if the BLE connection drops.
-
-## Built With
-
-- [Next.js](https://nextjs.org/) + [Tailwind CSS](https://tailwindcss.com/) — frontend
-- [FastAPI](https://fastapi.tiangolo.com/) — backend server
-- [PyTorch](https://pytorch.org/) — neural network
-- [pyomyo](https://github.com/PerlinWarp/pyomyo) — Myo armband interface
-- [NLTK](https://www.nltk.org/) + [wordfreq](https://github.com/rspeer/wordfreq) — word resolution
-
----
-
-*Built for the Neurohackathon.*
+MIT
