@@ -149,7 +149,3 @@ Open http://localhost:3000/translator
 - Calibration required per user (~15–30 minutes first time)
 - Some similar hand-shape letters (A/S/E, M/N) may be occasionally confused
 - Best accuracy achieved with consistent band placement
-
-## License
-
-MIT
